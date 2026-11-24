@@ -17,29 +17,25 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Download source
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: Find project folder
+      - name: Install unzip
+        run: sudo apt-get update && sudo apt-get install -y unzip
+
+      - name: Extract ZCB Live source
         shell: bash
         run: |
-          echo "Repository files:"
-          ls -la
+          mkdir -p source
+          unzip -q zcblive-android64-floating-gui.zip -d source
 
-          CARGO_FILE="$(find . -type f -path '*/live/Cargo.toml' -not -path './.git/*' -print -quit)"
+          echo "Extracted files:"
+          ls -la source
 
-          if [ -z "$CARGO_FILE" ]; then
-            echo "ERROR: live/Cargo.toml not found!"
-            echo "Check that the ZCB Live source files are uploaded."
+          if [ ! -f source/live/Cargo.toml ]; then
+            echo "ERROR: live/Cargo.toml not found inside ZIP"
             exit 1
           fi
-
-          PROJECT_ROOT="${CARGO_FILE%/live/Cargo.toml}"
-
-          echo "Found project: $PROJECT_ROOT"
-          echo "PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -62,10 +58,9 @@ jobs:
           echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$NDK/aarch64-linux-android23-clang" >> "$GITHUB_ENV"
 
       - name: Build Rust library
-        shell: bash
         run: |
           cargo build \
-            --manifest-path "$PROJECT_ROOT/live/Cargo.toml" \
+            --manifest-path source/live/Cargo.toml \
             --release \
             --features geode \
             --target aarch64-linux-android
@@ -77,20 +72,20 @@ jobs:
           sdk: latest
           cli: latest
           build-config: Release
-          path: ${{ env.PROJECT_ROOT }}
+          path: source
           combine: false
           bindings: geode-sdk/bindings
           android-min-sdk: 23
           use-cpm-cache: true
           use-lto: false
 
-      - name: Upload Android ARM64 mod
+      - name: Upload build files
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ZCB-Live-Android64
           path: |
-            **/*.geode
-            **/*.so
+            source/**/*.geode
+            source/**/*.so
           if-no-files-found: warn
           
