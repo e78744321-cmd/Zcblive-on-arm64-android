@@ -11,13 +11,36 @@ permissions:
   contents: read
 
 jobs:
-  build-android64:
+  build:
     name: Build Android ARM64
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Extract source ZIP
+        shell: bash
+        run: |
+          mkdir -p source
+
+          ZIP_FILE=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: Source ZIP not found!"
+            echo "Repository files:"
+            ls -la
+            exit 1
+          fi
+
+          echo "Extracting: $ZIP_FILE"
+          unzip -o "$ZIP_FILE" -d source
+
+          echo "Checking source files:"
+          ls -la source
+          test -f source/live/Cargo.toml
+          test -f source/mod.json
+          test -f source/CMakeLists.txt
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -29,7 +52,7 @@ jobs:
         with:
           ndk-version: r27c
 
-      - name: Configure Android Rust linker
+      - name: Configure Android linker
         shell: bash
         run: |
           TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
@@ -37,19 +60,19 @@ jobs:
           echo "CC_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android24-clang" >> "$GITHUB_ENV"
           echo "AR_aarch64_linux_android=$TOOLCHAIN/llvm-ar" >> "$GITHUB_ENV"
 
-      - name: Build Rust static library
-        working-directory: live
+      - name: Build Rust library
+        working-directory: source/live
         run: |
           cargo build \
             --release \
             --features geode \
             --target aarch64-linux-android
 
-      - name: Build Geode Android64 mod
-        id: build
+      - name: Build Geode mod
+        id: geode
         uses: geode-sdk/build-geode-mod@main
         with:
-          path: ./
+          path: source
           sdk: given
           cli: latest
           build-config: Release
@@ -57,15 +80,14 @@ jobs:
           bindings: geode-sdk/bindings
           bindings-ref: main
           android-min-sdk: 23
-          android-ndk-version: r27c
           combine: false
           use-cpm-cache: true
           use-lto: true
 
-      - name: Upload ZCB Live
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ZCB-Live-Android64
-          path: ${{ steps.build.outputs.build-output }}
+          path: source/**/*.geode
           if-no-files-found: error
           
